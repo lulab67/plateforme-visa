@@ -31,6 +31,7 @@ import json             # Les listes (attendus, contrôles...) sont stockées en
 import io               # Manipulation de fichiers en mémoire (exports Excel).
 import os               # Chemins (conversion PDF, anciens fichiers sur disque).
 import re               # Nettoyage des noms de fichiers (caractères interdits).
+import pathlib          # Adresse du profil LibreOffice (file:///...).
 import shutil           # Recherche du programme LibreOffice.
 import subprocess       # Lancement de LibreOffice pour la conversion PDF.
 import tempfile         # Dossier de travail temporaire pour la conversion PDF.
@@ -2989,14 +2990,14 @@ def convertir_en_pdf(contenu_xlsx, nom_fichier="bordereau"):
     nom_fichier = re.sub(r'[\\/:*?"<>|]', "_", nom_fichier) or "bordereau"
     programme = chemin_libreoffice()
     if programme is None:
-        return None, ("LibreOffice n'est pas installé sur ce poste : seule la version "
-                      "Excel du bordereau peut être générée.")
+        return None, ("LibreOffice n'est pas installé sur la machine qui fait tourner l'application : "
+                      "seule la version Excel du bordereau peut être générée.")
     with tempfile.TemporaryDirectory() as dossier:
         source = os.path.join(dossier, nom_fichier + ".xlsx")
         with open(source, "wb") as flux:
             flux.write(contenu_xlsx)
         # Profil LibreOffice dédié : évite les conflits avec une session ouverte.
-        profil = "file:///" + os.path.join(dossier, "profil").replace("\\", "/")
+        profil = pathlib.Path(dossier, "profil").as_uri()   # Windows comme Linux (serveur en ligne)
         try:
             subprocess.run(
                 [programme, f"-env:UserInstallation={profil}", "--headless",
