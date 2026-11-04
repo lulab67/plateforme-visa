@@ -61,8 +61,9 @@ def _section_visa_sb(projets):
             elements = []
             for r in rappels:
                 retard = " <b style='color:#FF6B6B'>· en retard</b>" if r["niveau"] == "retard" else ""
+                a_transferer = " · à transférer" if r["avant_transfert"] else ""
                 elements.append(f"{_libelle_element(r)}<br><span class='b-gris'>déposé le {_date_fr(r['date_depot'])}"
-                                f" · à viser avant le {_date_fr(r['echeance'])}</span>{retard}")
+                                f" · à viser avant le {_date_fr(r['echeance'])}{a_transferer}</span>{retard}")
             etiquette = badge(f"{len(rappels)} à viser · avant le {_date_fr(plus_urgent['echeance'], court=True)}", genre)
             with st.container(border=True):
                 c1, c2, c3 = st.columns([2.6, 1.6, 0.9])

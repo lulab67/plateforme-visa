@@ -2014,9 +2014,13 @@ def build_eml(projet, lot, positions):
 #  Quand le titulaire dépose un document, c'est à NOUS de le viser : un
 #  rappel s'ouvre automatiquement avec une échéance « à viser avant le »
 #  (date du dépôt + délai du lot, 10 jours ouvrés par défaut). Il reste
-#  ouvert jusqu'à ce qu'on le clôture à la main (bouton « Visé »).
+#  ouvert jusqu'à l'émission du bordereau.
 #  Un nouveau dépôt sur une position qui a déjà un rappel ouvert s'ajoute à
 #  ce rappel, sans repousser l'échéance.
+#  Dépôt sur la Plateforme visa partenaires : le compteur démarre à l'envoi.
+#  Tant que la ligne n'est pas traitée, il est calculé à partir de cette ligne
+#  (voir _rappels_avant_transfert) : le transfert le remplace par un vrai
+#  rappel à la même date ; le refus l'arrête, et un nouvel envoi repart de zéro.
 # ============================================================================
 
 def ouvrir_rappel_sb(projet, lot, position_id, noms_fichiers, date_depot=None):
@@ -2068,11 +2072,70 @@ def rappel_ouvert(position_id):
     return None
 
 
+def _rappels_avant_transfert(connexion, projet=None, lot_id=None, position_id=None):
+    """Rappels des lignes de dépôt qui attendent leur transfert : échéance = date
+    d'envoi + délai du lot. Rien n'est enregistré : une ligne refusée disparaît.
+    Une position n'a qu'un rappel : si elle en a déjà un ouvert, il est gardé, et
+    entre deux envois en attente c'est le plus ancien qui compte."""
+    conditions = ["dl.statut=?"]
+    valeurs = [LIGNE_TRANSMISE]
+    if projet:
+        conditions.append("d.projet=?")
+        valeurs.append(projet)
+    if lot_id:
+        conditions.append("d.lot_id=?")
+        valeurs.append(lot_id)
+    if position_id:
+        conditions.append("dl.position_id=?")
+        valeurs.append(position_id)
+    filtre = " AND ".join(conditions)
+    lignes = connexion.execute(
+        f"""SELECT dl.id AS ligne_id, dl.position_id, dl.libre_type, dl.libre_pos, dl.libre_des,
+                   d.projet, d.lot_id, d.date_envoi, l.delai_visa_sb,
+                   p.pos AS pos, p.des AS des, p.ptype AS ptype, p.archive AS archive
+            FROM depot_lignes dl
+            JOIN depots d ON d.id = dl.depot_id
+            JOIN lots l ON l.id = d.lot_id
+            LEFT JOIN positions p ON p.id = dl.position_id
+            WHERE {filtre} ORDER BY d.date_envoi, dl.id""", valeurs).fetchall()
+    positions_vues = set()
+    for ligne in connexion.execute("SELECT position_id FROM rappels_sb WHERE cloture=0").fetchall():
+        positions_vues.add(ligne["position_id"])
+    rappels = []
+    for ligne in lignes:
+        if ligne["position_id"]:
+            # Position supprimée ou archivée : seule la page Dépôts reçus peut encore traiter la ligne.
+            if ligne["des"] is None or ligne["archive"] or ligne["position_id"] in positions_vues:
+                continue
+            positions_vues.add(ligne["position_id"])
+        date_depot = ligne["date_envoi"][:10]
+        delai = int(ligne["delai_visa_sb"] or DELAI_VISA_SB)
+        echeance = calendrier.ajouter_jours_ouvres(dt.date.fromisoformat(date_depot), delai)
+        noms_fichiers = []
+        for fichier in _fichiers_ligne_depot(connexion, ligne["ligne_id"]):
+            noms_fichiers.append(fichier["nom"])
+        rappel = {"id": None, "projet": ligne["projet"], "lot_id": ligne["lot_id"],
+                  "position_id": ligne["position_id"], "date_depot": date_depot,
+                  "echeance": echeance.isoformat(), "fichiers": noms_fichiers,
+                  "cloture": 0, "date_cloture": None, "avant_transfert": True,
+                  "pos": ligne["pos"], "des": ligne["des"], "ptype": ligne["ptype"]}
+        if not ligne["position_id"]:
+            # Document non prévu : référence et désignation saisies par l'entreprise.
+            rappel["pos"] = ligne["libre_pos"] or ""
+            rappel["des"] = ligne["libre_des"] or ""
+            rappel["ptype"] = ligne["libre_type"] or LIBRE_CCTP
+        rappels.append(rappel)
+    return rappels
+
+
 def get_rappels_sb(projet=None, lot_id=None, position_id=None, ouverts_seulement=True):
     """Liste des rappels de visa, échéance la plus proche en premier.
     Chaque rappel est complété par la position (pos, des, ptype) et son état :
       "jours_restants" : jours ouvrés avant l'échéance (négatif = retard)
-      "niveau"         : "retard", "proche" (≤ 2 jours ouvrés) ou "ok"."""
+      "niveau"         : "retard", "proche" (≤ 2 jours ouvrés) ou "ok"
+      "avant_transfert": True si le dépôt attend encore son transfert (voir
+                         _rappels_avant_transfert ; position_id vide si le
+                         document n'était pas prévu)."""
     conditions = []
     valeurs = []
     if ouverts_seulement:
@@ -2094,12 +2157,18 @@ def get_rappels_sb(projet=None, lot_id=None, position_id=None, ouverts_seulement
         f"""SELECT r.*, p.pos AS pos, p.des AS des, p.ptype AS ptype
             FROM rappels_sb r LEFT JOIN positions p ON p.id = r.position_id
             {filtre} ORDER BY r.echeance, r.id""", valeurs).fetchall()
-    connexion.close()
-    aujourd_hui = dt.date.today()
-    resultat = []
+    rappels = []
     for ligne in lignes:
         rappel = dict(ligne)
         rappel["fichiers"] = json.loads(rappel["fichiers"] or "[]")
+        rappel["avant_transfert"] = False
+        rappels.append(rappel)
+    rappels.extend(_rappels_avant_transfert(connexion, projet, lot_id, position_id))
+    rappels.sort(key=lambda rappel: rappel["echeance"])   # ordre conservé à échéance égale
+    connexion.close()
+    aujourd_hui = dt.date.today()
+    resultat = []
+    for rappel in rappels:
         restants = calendrier.jours_ouvres_restants(
             aujourd_hui, dt.date.fromisoformat(rappel["echeance"]))
         rappel["jours_restants"] = restants
@@ -2649,11 +2718,6 @@ def _habiller_bordereau(feuille, derniere_colonne, lignes_titres, premiere_donne
             _police(feuille.cell(numero_ligne, 2), 8.5, couleur="3D3D3D")
         elif texte.startswith("NB"):
             _police(tete, 8, italique=True, couleur=GRIS_TEXTE)
-        else:
-            # « Présent VISA » / « VISA du jour » (case de couleur du gabarit conservée).
-            voisine = feuille.cell(numero_ligne, 2)
-            if voisine.value:
-                _police(voisine, 8.5, gras=True, couleur="3D3D3D")
 
 
 

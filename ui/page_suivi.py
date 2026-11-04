@@ -404,7 +404,8 @@ def _detail_position(i, p, POS, projet, LOT, rappel, ro):
                 genre = {"retard": "retard", "proche": "proche"}.get(rappel["niveau"], "sb")
                 st.markdown(badge(f"À viser par SB avant le {_date_fr(rappel['echeance'])}", genre, long=True),
                             unsafe_allow_html=True)
-                st.caption("Clos à l'émission du bordereau.")
+                st.caption("Dépôt à transférer (page Dépôts reçus)." if rappel["avant_transfert"]
+                           else "Clos à l'émission du bordereau.")
             else:
                 st.caption("Aucun document en attente de visa SB.")
         with t0[3].popover("Supprimer", icon=":material/delete:", width="stretch"):
@@ -658,7 +659,8 @@ def afficher(ctx):
     projet = core.get_projet(proj_code)
     signataire = core.interlocuteur(projet)
     POS = core.get_positions(proj_code, LOT["id"])
-    rappels = core.get_rappels_sb(lot_id=LOT["id"])
+    # Un document non prévu (sans position) reste sur la page Dépôts reçus jusqu'au transfert.
+    rappels = [r for r in core.get_rappels_sb(lot_id=LOT["id"]) if r["position_id"]]
     rappels_par_pos = {r["position_id"]: r for r in rappels}
 
     contact = " ".join(x for x in [LOT.get("contact_civ"), LOT.get("contact_nom")] if x and LOT.get("contact_nom"))

@@ -3,7 +3,7 @@
 #  Active seulement si les secrets de l'appli contiennent demo_en_ligne = true.
 #  En local (pas de secrets), rien ne change.
 #  En ligne, le disque est effacé aux redémarrages et chaque appli a le sien :
-#  la démo est rechargée si la base est vide, et un message le dit.
+#  la démo est rechargée si la base est vide.
 # ============================================================================
 
 import streamlit as st
@@ -29,10 +29,7 @@ def charger_une_seule_fois(chemin_base):
 
 
 def preparer():
-    """À appeler après core.init_db() : charge la démo si besoin et affiche le message."""
+    """À appeler après core.init_db() : charge la démo si besoin."""
     if not lire_secret("demo_en_ligne"):
         return
     charger_une_seule_fois(core.DB_PATH)
-    st.caption(":material/info: Démonstration : données fictives, effacées à chaque redémarrage. "
-               f"La {core.NOM_PLATEFORME} et la {core.NOM_PORTAIL} ne communiquent pas ici : "
-               "un dépôt fait sur l'une n'arrive pas sur l'autre.")

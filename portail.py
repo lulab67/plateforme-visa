@@ -12,7 +12,7 @@ import core
 from ui.style import appliquer_css
 from ui import demo_en_ligne, page_portail
 
-PORTAIL_VERSION = "1.6"
+PORTAIL_VERSION = "1.7"
 st.set_page_config(page_title=f"{core.NOM_PORTAIL} — Solares Bauen", page_icon=":material/upload_file:",
                    layout="wide", initial_sidebar_state="expanded")
 core.init_db()

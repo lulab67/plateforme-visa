@@ -11,7 +11,7 @@ from ui.auth import authentifier
 from ui.sidebar import barre_laterale
 from ui import demo_en_ligne, page_suivi, page_dashboard, page_depots, page_base, page_trames, page_admin
 
-APP_VERSION = "8.2"
+APP_VERSION = "8.3"
 st.set_page_config(page_title=f"{core.NOM_PLATEFORME} — Solares Bauen", page_icon=":material/fact_check:",
                    layout="wide")
 core.init_db()
